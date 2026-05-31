@@ -21,7 +21,7 @@ from __future__ import annotations
 from typing import Any
 from pydantic import BaseModel, Field, model_validator
 from datetime import datetime, date
-from .enums import Direction, BusStatus
+from .enums import BusStatus
 
 
 # ---------------------------------------------------------------------------
@@ -80,10 +80,6 @@ class Route(BaseModel):
         j = self.stops.index(to_stop)
         return self.stops[i + 1 : j + 1]
 
-    def ordered_stops_for_direction(self, direction: Direction) -> list[str]:
-        """Return stops in the correct travel order for the given direction."""
-        return self.stops if direction == Direction.BK else list(reversed(self.stops))
-
 
 # ---------------------------------------------------------------------------
 # Station Model
@@ -120,7 +116,7 @@ class Bus(BaseModel):
     """
     id: str
     operator: str
-    direction: Direction
+    route_id: str
     departure_time: str             # "HH:MM" format — parsed at runtime
     battery_range_km: float = Field(default=240.0, gt=0)
     speed_kmh: float = Field(default=60.0, gt=0)
@@ -169,7 +165,7 @@ class Scenario(BaseModel):
     name: str
     description: str = ""
     weights: Weights = Field(default_factory=Weights)
-    route: Route
+    routes: list[Route]
     stations: list[Station]
     buses: list[Bus]
 
@@ -178,12 +174,21 @@ class Scenario(BaseModel):
         """IDs of all charging stations (not endpoints)."""
         return [s.id for s in self.stations]
 
+    def get_route(self, route_id: str) -> "Route":
+        """Look up a route by ID."""
+        for r in self.routes:
+            if r.id == route_id:
+                return r
+        raise KeyError(f"Route '{route_id}' not found in scenario '{self.id}'")
+
     def get_station(self, station_id: str) -> Station:
         """Look up a station by ID."""
         for s in self.stations:
             if s.id == station_id:
                 return s
-        raise KeyError(f"Station '{station_id}' not found in scenario '{self.id}'")
+        raise KeyError(
+            f"Station '{station_id}' not found in scenario '{self.id}'"
+        )
 
 
 # ---------------------------------------------------------------------------

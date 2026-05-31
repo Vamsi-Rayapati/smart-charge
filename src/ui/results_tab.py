@@ -56,7 +56,7 @@ def render_timetable(result) -> None:
         timetable_rows.append({
             "Bus ID": bid,
             "Operator": bus.operator.upper(),
-            "Direction": "BK" if bus.direction.value == "BK" else "KB",
+            "Route": bus.route_id,
             "Departure Time": bus.departure_time,
             "Arrival Time": timeline.final_arrival_hhmm,
             "Wait Time (min)": timeline.total_wait_minutes,

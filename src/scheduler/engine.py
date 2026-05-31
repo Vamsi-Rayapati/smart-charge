@@ -37,8 +37,6 @@ from src.domain.models import (
     Scenario, Bus, BusTimeline, StationLog,
     ScheduleResult, ChargingStop, TimelineEvent
 )
-from src.domain.enums import Direction
-
 from src.scheduler.events.event import (
     BusDepartureEvent, StationArrivalEvent,
     ChargingStartedEvent, ChargingCompletedEvent, TripCompletedEvent
@@ -130,9 +128,9 @@ class SchedulerEngine:
             if bus.status.value == "CANCELLED":
                 continue
 
-            plan = self._plan_generator.best_plan(bus, scenario.route, scenario)
-            ordered = scenario.route.ordered_stops_for_direction(bus.direction)
-            origin = ordered[0]
+            bus_route = scenario.get_route(bus.route_id)
+            plan = self._plan_generator.best_plan(bus, bus_route, scenario)
+            origin = bus_route.stops[0]
 
             bus_states[bus.id] = BusState(
                 bus=bus,
@@ -181,7 +179,8 @@ class SchedulerEngine:
             # ---- BusDeparture ----
             if isinstance(event, BusDepartureEvent):
                 first_station = state.plan[0]
-                dist = scenario.route.distance_between(state.last_position, first_station)
+                bus_route = scenario.get_route(bus.route_id)
+                dist = bus_route.distance_between(state.last_position, first_station)
                 travel = self._travel_strategy.travel_minutes(bus, dist, {})
                 arr_t = event.timestamp + travel
 
@@ -260,12 +259,12 @@ class SchedulerEngine:
                 state.last_position_time = t
                 state.plan_index += 1
 
-                ordered = scenario.route.ordered_stops_for_direction(bus.direction)
-                destination = ordered[-1]
+                bus_route = scenario.get_route(bus.route_id)
+                destination = bus_route.stops[-1]
 
                 if state.plan_index >= len(state.plan):
                     # Head to destination
-                    dist = scenario.route.distance_between(station_id, destination)
+                    dist = bus_route.distance_between(station_id, destination)
                     travel = self._travel_strategy.travel_minutes(bus, dist, {})
                     arr_t = t + travel
                     queue.push(TripCompletedEvent(
@@ -282,7 +281,7 @@ class SchedulerEngine:
                 else:
                     # Head to next charging station
                     next_station = state.plan[state.plan_index]
-                    dist = scenario.route.distance_between(station_id, next_station)
+                    dist = bus_route.distance_between(station_id, next_station)
                     travel = self._travel_strategy.travel_minutes(bus, dist, {})
                     arr_t = t + travel
                     arrival_times[(bus_id, next_station)] = arr_t
@@ -397,12 +396,12 @@ class SchedulerEngine:
         timelines[bus.id].charging_stops.append(stop)
 
         # Determine if this is the bus's last charging stop
-        ordered = scenario.route.ordered_stops_for_direction(bus.direction)
+        bus_route = scenario.get_route(bus.route_id)
         next_plan_idx = state.plan_index + 1  # After this charge
         is_final = next_plan_idx >= len(state.plan)
 
         next_stop = (
-            scenario.route.ordered_stops_for_direction(bus.direction)[-1]
+            bus_route.stops[-1]
             if is_final
             else state.plan[next_plan_idx]
         )

@@ -6,12 +6,6 @@ a single source of truth for categorical values.
 from enum import Enum
 
 
-class Direction(str, Enum):
-    """Travel direction for a bus trip."""
-    BK = "BK"  # Bengaluru → Kochi
-    KB = "KB"  # Kochi → Bengaluru
-
-
 class EventType(str, Enum):
     """Types of simulation events processed by the event-driven engine."""
     BUS_DEPARTURE = "BUS_DEPARTURE"

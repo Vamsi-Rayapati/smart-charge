@@ -1,7 +1,7 @@
 {
-  "id": "scenario2",
-  "name": "Scenario 2 — Bunched Start",
-  "description": "Heavy early contention. Buses from both directions depart in a tight cluster every 8 minutes. High charger collision risk at inner stations B and C.",
+  "id": "scenario5",
+  "name": "Scenario 5 — Worst Case Convergence",
+  "description": "Maximum contention. All 20 buses dispatched within a 72-minute window (every 8 min) from both ends simultaneously. Inner stations B and C experience peak collision from both directions at the same time.",
   "weights": {"individual": 1.0, "operator": 1.0, "overall": 1.0},
   "routes": [
     {
@@ -41,9 +41,9 @@
     {"id": "bus-BK-05", "operator": "freshbus", "route_id": "bengaluru-kochi", "departure_time": "19:32", "battery_range_km": 240, "speed_kmh": 60, "charging_duration_minutes": 25, "priority": 0, "status": "SCHEDULED"},
     {"id": "bus-BK-06", "operator": "flixbus",  "route_id": "bengaluru-kochi", "departure_time": "19:40", "battery_range_km": 240, "speed_kmh": 60, "charging_duration_minutes": 25, "priority": 0, "status": "SCHEDULED"},
     {"id": "bus-BK-07", "operator": "kpn",      "route_id": "bengaluru-kochi", "departure_time": "19:48", "battery_range_km": 240, "speed_kmh": 60, "charging_duration_minutes": 25, "priority": 0, "status": "SCHEDULED"},
-    {"id": "bus-BK-08", "operator": "freshbus", "route_id": "bengaluru-kochi", "departure_time": "20:03", "battery_range_km": 240, "speed_kmh": 60, "charging_duration_minutes": 25, "priority": 0, "status": "SCHEDULED"},
-    {"id": "bus-BK-09", "operator": "flixbus",  "route_id": "bengaluru-kochi", "departure_time": "20:18", "battery_range_km": 240, "speed_kmh": 60, "charging_duration_minutes": 25, "priority": 0, "status": "SCHEDULED"},
-    {"id": "bus-BK-10", "operator": "kpn",      "route_id": "bengaluru-kochi", "departure_time": "20:33", "battery_range_km": 240, "speed_kmh": 60, "charging_duration_minutes": 25, "priority": 0, "status": "SCHEDULED"},
+    {"id": "bus-BK-08", "operator": "freshbus", "route_id": "bengaluru-kochi", "departure_time": "19:56", "battery_range_km": 240, "speed_kmh": 60, "charging_duration_minutes": 25, "priority": 0, "status": "SCHEDULED"},
+    {"id": "bus-BK-09", "operator": "flixbus",  "route_id": "bengaluru-kochi", "departure_time": "20:04", "battery_range_km": 240, "speed_kmh": 60, "charging_duration_minutes": 25, "priority": 0, "status": "SCHEDULED"},
+    {"id": "bus-BK-10", "operator": "kpn",      "route_id": "bengaluru-kochi", "departure_time": "20:12", "battery_range_km": 240, "speed_kmh": 60, "charging_duration_minutes": 25, "priority": 0, "status": "SCHEDULED"},
 
     {"id": "bus-KB-01", "operator": "freshbus", "route_id": "kochi-bengaluru", "departure_time": "19:00", "battery_range_km": 240, "speed_kmh": 60, "charging_duration_minutes": 25, "priority": 0, "status": "SCHEDULED"},
     {"id": "bus-KB-02", "operator": "flixbus",  "route_id": "kochi-bengaluru", "departure_time": "19:08", "battery_range_km": 240, "speed_kmh": 60, "charging_duration_minutes": 25, "priority": 0, "status": "SCHEDULED"},
@@ -52,8 +52,8 @@
     {"id": "bus-KB-05", "operator": "flixbus",  "route_id": "kochi-bengaluru", "departure_time": "19:32", "battery_range_km": 240, "speed_kmh": 60, "charging_duration_minutes": 25, "priority": 0, "status": "SCHEDULED"},
     {"id": "bus-KB-06", "operator": "kpn",      "route_id": "kochi-bengaluru", "departure_time": "19:40", "battery_range_km": 240, "speed_kmh": 60, "charging_duration_minutes": 25, "priority": 0, "status": "SCHEDULED"},
     {"id": "bus-KB-07", "operator": "freshbus", "route_id": "kochi-bengaluru", "departure_time": "19:48", "battery_range_km": 240, "speed_kmh": 60, "charging_duration_minutes": 25, "priority": 0, "status": "SCHEDULED"},
-    {"id": "bus-KB-08", "operator": "flixbus",  "route_id": "kochi-bengaluru", "departure_time": "20:03", "battery_range_km": 240, "speed_kmh": 60, "charging_duration_minutes": 25, "priority": 0, "status": "SCHEDULED"},
-    {"id": "bus-KB-09", "operator": "kpn",      "route_id": "kochi-bengaluru", "departure_time": "20:18", "battery_range_km": 240, "speed_kmh": 60, "charging_duration_minutes": 25, "priority": 0, "status": "SCHEDULED"},
-    {"id": "bus-KB-10", "operator": "freshbus", "route_id": "kochi-bengaluru", "departure_time": "20:33", "battery_range_km": 240, "speed_kmh": 60, "charging_duration_minutes": 25, "priority": 0, "status": "SCHEDULED"}
+    {"id": "bus-KB-08", "operator": "flixbus",  "route_id": "kochi-bengaluru", "departure_time": "19:56", "battery_range_km": 240, "speed_kmh": 60, "charging_duration_minutes": 25, "priority": 0, "status": "SCHEDULED"},
+    {"id": "bus-KB-09", "operator": "kpn",      "route_id": "kochi-bengaluru", "departure_time": "20:04", "battery_range_km": 240, "speed_kmh": 60, "charging_duration_minutes": 25, "priority": 0, "status": "SCHEDULED"},
+    {"id": "bus-KB-10", "operator": "freshbus", "route_id": "kochi-bengaluru", "departure_time": "20:12", "battery_range_km": 240, "speed_kmh": 60, "charging_duration_minutes": 25, "priority": 0, "status": "SCHEDULED"}
   ]
 }

@@ -42,9 +42,8 @@ class BatteryConstraint(Constraint):
         Check every inter-charge leg:
           origin → first_charge, charge_i → charge_i+1, last_charge → destination
         """
-        ordered_stops = route.ordered_stops_for_direction(bus.direction)
-        origin = ordered_stops[0]
-        destination = ordered_stops[-1]
+        origin = route.stops[0]
+        destination = route.stops[-1]
 
         # Build the full sequence of waypoints (charging + endpoints)
         waypoints = [origin] + charging_stations + [destination]
@@ -68,9 +67,8 @@ class BatteryConstraint(Constraint):
         route: "Route",
         scenario: "Scenario",
     ) -> str:
-        ordered_stops = route.ordered_stops_for_direction(bus.direction)
-        origin = ordered_stops[0]
-        destination = ordered_stops[-1]
+        origin = route.stops[0]
+        destination = route.stops[-1]
         waypoints = [origin] + charging_stations + [destination]
 
         for i in range(len(waypoints) - 1):

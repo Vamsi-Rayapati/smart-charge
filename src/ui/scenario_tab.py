@@ -8,15 +8,17 @@ from src.domain.models import Scenario
 
 def _route_table(scenario: Scenario) -> None:
     st.markdown("#### 📍 Route Topology")
-    route_df = pd.DataFrame([
-        {
-            "From": seg.from_stop,
-            "To": seg.to_stop,
-            "Distance (km)": f"{seg.distance_km} km",
-        }
-        for seg in scenario.route.segments
-    ])
-    st.table(route_df)
+    for route in scenario.routes:
+        st.markdown(f"**{route.stops[0]} → {route.stops[-1]}** (`{route.id}`)")
+        route_df = pd.DataFrame([
+            {
+                "From": seg.from_stop,
+                "To": seg.to_stop,
+                "Distance (km)": f"{seg.distance_km} km",
+            }
+            for seg in route.segments
+        ])
+        st.table(route_df)
 
 
 def _stations_table(scenario: Scenario) -> None:
@@ -36,8 +38,8 @@ def _fleet_table(scenario: Scenario) -> None:
     st.markdown("#### 🚌 Fleet Deparature & Configuration")
     buses_data = []
     for b in scenario.buses:
-        is_bk = b.direction.value == "BK"
-        direction = "Bengaluru ➡️ Kochi" if is_bk else "Kochi ➡️ Bengaluru"
+        route = scenario.get_route(b.route_id)
+        direction_label = f"{route.stops[0]} → {route.stops[-1]}"
         priority = (
             "🔴 Emergency" if b.priority == 2
             else "🟡 VIP" if b.priority == 1
@@ -46,7 +48,7 @@ def _fleet_table(scenario: Scenario) -> None:
         buses_data.append({
             "Bus ID": b.id,
             "Operator": b.operator.upper(),
-            "Direction": direction,
+            "Route": direction_label,
             "Departure": b.departure_time,
             "Range (km)": f"{b.battery_range_km} km",
             "Speed (km/h)": f"{b.speed_kmh} km/h",

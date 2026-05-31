@@ -59,10 +59,9 @@ class PlanGenerator:
         Returns: List of valid plans, each plan is a list of station IDs.
                  Empty list means no valid plan exists (constraint violation).
         """
-        ordered_stops = route.ordered_stops_for_direction(bus.direction)
         # Intermediate charging stations in travel order (not endpoints)
         chargeable = [
-            s for s in ordered_stops
+            s for s in route.stops
             if s in scenario.charging_station_ids
         ]
 
@@ -110,7 +109,7 @@ class PlanGenerator:
         if not plans:
             raise ValueError(
                 f"No valid charging plan found for bus '{bus.id}' "
-                f"(direction={bus.direction.value}, range={bus.battery_range_km} km). "
+                f"(route={bus.route_id}, range={bus.battery_range_km} km). "
                 f"Check route distances and battery range."
             )
         return plans[0]

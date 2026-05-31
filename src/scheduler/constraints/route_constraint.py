@@ -32,10 +32,9 @@ class RouteOrderConstraint(Constraint):
         if not charging_stations:
             return True
 
-        ordered_stops = route.ordered_stops_for_direction(bus.direction)
-        # Only keep stops that are charging stations
+        # Only keep stops that are charging stations (in travel order)
         route_charging_stops = [
-            s for s in ordered_stops if s in scenario.charging_station_ids
+            s for s in route.stops if s in scenario.charging_station_ids
         ]
 
         # charging_stations must appear in the same relative order
@@ -55,5 +54,5 @@ class RouteOrderConstraint(Constraint):
     ) -> str:
         return (
             f"RouteOrderConstraint: Bus '{bus.id}' plan {charging_stations} "
-            f"violates route order for direction {bus.direction.value}"
+            f"violates route order for route '{bus.route_id}'"
         )
