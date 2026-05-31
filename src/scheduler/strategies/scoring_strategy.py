@@ -27,7 +27,7 @@ if TYPE_CHECKING:
 class ScoringStrategy:
     """
     Composes all active scoring rules with their configured weights.
-    
+
     Instantiated once per scenario run with that scenario's Weights.
     Rules are stateless — the context carries all mutable state.
     """
@@ -44,9 +44,9 @@ class ScoringStrategy:
     def score(self, bus: "Bus", context: SimulationContext) -> float:
         """
         Compute the composite score for a bus at this decision point.
-        
+
         Lower score = higher priority = wins charger contention.
-        
+
         Each rule's penalty() can return positive or negative values;
         the convention is: negative penalty = good for the bus.
         """
@@ -59,8 +59,3 @@ class ScoringStrategy:
         Return waiting buses sorted by score ascending (lowest score first = highest priority).
         """
         return sorted(waiting_buses, key=lambda b: self.score(b, context))
-
-    @property
-    def active_rules(self) -> list[str]:
-        """Names of all active rules — useful for documentation and debugging."""
-        return [rule.name for rule, _ in self._rules]

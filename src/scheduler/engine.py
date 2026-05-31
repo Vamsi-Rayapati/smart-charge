@@ -2,52 +2,59 @@
 SchedulerEngine — Core event-driven simulation engine.
 
 Algorithm:
-  Phase 1 — Plan Generation:
-    For each bus, enumerate all valid charging plans (via PlanGenerator + Constraints).
-    Select the best plan (fewest stops, earliest stations).
+  Phase 1 — Seeding:
+    Push a BusDeparture event for every active bus.
+    No plans are assigned yet — selection is deferred to departure time
+    so each bus sees the real network state when it actually leaves.
 
   Phase 2 — Event-Driven Simulation:
-    Push BusDeparture events for all buses.
-    Process events chronologically from min-heap priority queue:
+    Process events chronologically from a min-heap priority queue:
 
-    BusDeparture     → compute travel time to first charging station
-                       → push StationArrival
-    StationArrival   → if charger available: immediately start charging
-                       → else: add bus to waiting queue (sorted by score)
+    BusDeparture     → select plan via PlanSelectionStrategy
+                       → push StationArrival for first charging stop
+    StationArrival   → if charger free: start charging immediately
+                       → else: add bus to waiting queue
     ChargingStarted  → record in timeline
     ChargingCompleted→ release charger slot
                        → serve next waiting bus (scored by rules)
-                       → push next event for this bus (next station or destination)
+                       → push next event (next station or destination)
     TripCompleted    → record final arrival
 
   Charger State:
-    charger_slots[station_id]: list of floats (free-at timestamps), one per charger.
-    Supports num_chargers > 1 transparently — no code change needed.
+    charger_slots[station_id]: one float per charger (free-at timestamp).
+    Supports num_chargers > 1 transparently.
 
   Conflict Resolution:
-    When charger is busy, bus enters waiting_queue[station_id].
-    When charger frees up, all waiting buses are scored and the lowest-score
-    bus wins (ScoringStrategy.rank_queue).
+    Waiting buses are scored by ScoringStrategy; lowest score wins.
 """
 from __future__ import annotations
 from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from src.domain.models import (
     Scenario, Bus, BusTimeline, StationLog,
-    ScheduleResult, ChargingStop, TimelineEvent
+    ScheduleResult, ChargingStop, TimelineEvent,
 )
 from src.scheduler.events.event import (
     BusDepartureEvent, StationArrivalEvent,
-    ChargingStartedEvent, ChargingCompletedEvent, TripCompletedEvent
+    ChargingStartedEvent, ChargingCompletedEvent, TripCompletedEvent,
 )
 from src.scheduler.events.event_queue import EventQueue
 from src.scheduler.rules.base_rule import SimulationContext
-from src.scheduler.strategies.charging_strategy import ChargingStrategy, FixedChargingStrategy
-from src.scheduler.strategies.travel_time_strategy import TravelTimeStrategy, FixedSpeedStrategy
+from src.scheduler.strategies.charging_strategy import (
+    ChargingStrategy, FixedChargingStrategy,
+)
+from src.scheduler.strategies.travel_time_strategy import (
+    TravelTimeStrategy, FixedSpeedStrategy,
+)
 from src.scheduler.strategies.scoring_strategy import ScoringStrategy
+from src.scheduler.strategies.plan_selection_strategy import (
+    PlanSelectionStrategy, LoadBalancedStrategy, SchedulerState,
+)
 from src.scheduler.constraints.battery_constraint import BatteryConstraint
-from src.scheduler.constraints.charger_constraint import ChargerCapacityConstraint
+from src.scheduler.constraints.charger_constraint import (
+    ChargerCapacityConstraint,
+)
 from src.scheduler.constraints.route_constraint import RouteOrderConstraint
 from src.scheduler.plan_generator import PlanGenerator
 
@@ -56,30 +63,39 @@ from src.scheduler.plan_generator import PlanGenerator
 class BusState:
     """All mutable runtime state for a single bus during simulation."""
     bus: Bus
-    plan: list[str]                  # Ordered charging station IDs
-    plan_index: int = 0              # Index into plan (which stop we just reached)
-    cumulative_wait: float = 0.0     # Total minutes waited so far
-    last_position: str = ""          # Last position (station or origin)
-    last_position_time: float = 0.0  # Time we left last position
+    plan: list[str]             # Ordered charging station IDs
+    plan_index: int = 0         # Index of the stop we are heading to next
+    cumulative_wait: float = 0.0
+    last_position: str = ""
+    last_position_time: float = 0.0
 
 
 class SchedulerEngine:
     """
     Event-driven bus charging scheduler.
 
-    Wires together PlanGenerator, EventQueue, ScoringStrategy,
-    ChargingStrategy, and TravelTimeStrategy.
+    Wires together PlanGenerator, PlanSelectionStrategy, EventQueue,
+    ScoringStrategy, ChargingStrategy, and TravelTimeStrategy.
 
-    Adding rules, constraints, or strategies never requires modifying this file.
+    Adding rules, constraints, or strategies never requires modifying
+    this file.
     """
 
     def __init__(
         self,
         charging_strategy: ChargingStrategy | None = None,
         travel_time_strategy: TravelTimeStrategy | None = None,
+        plan_selection_strategy: PlanSelectionStrategy | None = None,
     ) -> None:
-        self._charging_strategy = charging_strategy or FixedChargingStrategy()
-        self._travel_strategy = travel_time_strategy or FixedSpeedStrategy()
+        self._charging_strategy = (
+            charging_strategy or FixedChargingStrategy()
+        )
+        self._travel_strategy = (
+            travel_time_strategy or FixedSpeedStrategy()
+        )
+        self._plan_selection_strategy = (
+            plan_selection_strategy or LoadBalancedStrategy()
+        )
         self._constraints = [
             BatteryConstraint(),
             RouteOrderConstraint(),
@@ -99,18 +115,20 @@ class SchedulerEngine:
             s.id: StationLog(station_id=s.id) for s in scenario.stations
         }
 
-        # Charger slots: station_id → list[float] (one free-at per charger)
+        # One free-at timestamp per charger, per station
         charger_slots: dict[str, list[float]] = {
             s.id: [0.0] * s.num_chargers for s in scenario.stations
         }
 
-        # Waiting queues: station_id → list of bus_ids in arrival order
+        # Buses committed to charge at each station (for load balancing)
+        station_usage: dict[str, int] = defaultdict(int)
+
+        # Waiting queues: station_id → bus_ids in arrival order
         waiting_queues: dict[str, list[str]] = defaultdict(list)
 
-        # Arrival times at each station (for wait calculation)
-        arrival_times: dict[tuple[str, str], float] = {}  # (bus_id, station_id) → time
+        # (bus_id, station_id) → arrival timestamp
+        arrival_times: dict[tuple[str, str], float] = {}
 
-        # Cumulative wait tracking (for scoring rules)
         bus_cumulative_wait: dict[str, float] = {}
         operator_total_wait: dict[str, float] = defaultdict(float)
         operator_bus_counts: dict[str, int] = defaultdict(int)
@@ -123,36 +141,26 @@ class SchedulerEngine:
             operator_bus_counts[bus.operator] += 1
             bus_cumulative_wait[bus.id] = 0.0
 
-        # --- Phase 1: Generate plans and seed events ---
+        # --- Phase 1: Seed departure events (plans assigned lazily) ---
         for bus in scenario.buses:
             if bus.status.value == "CANCELLED":
                 continue
 
             bus_route = scenario.get_route(bus.route_id)
-            plan = self._plan_generator.best_plan(bus, bus_route, scenario)
             origin = bus_route.stops[0]
 
             bus_states[bus.id] = BusState(
                 bus=bus,
-                plan=plan,
+                plan=[],            # filled in when BusDeparture fires
                 last_position=origin,
                 last_position_time=bus.departure_minutes(),
             )
             timelines[bus.id] = BusTimeline(bus=bus)
 
-            # Seed the queue with departure events
             queue.push(BusDepartureEvent(
                 timestamp=bus.departure_minutes(),
                 bus_id=bus.id,
-                next_station_id=plan[0] if plan else origin,
-            ))
-
-            timelines[bus.id].events.append(TimelineEvent(
-                bus_id=bus.id,
-                event_type="DEPARTED",
-                station_id=origin,
-                time_minutes=bus.departure_minutes(),
-                notes=f"Full charge. Plan: {' → '.join(plan)}",
+                next_station_id="",     # resolved at departure time
             ))
 
         # --- Phase 2: Event loop ---
@@ -173,14 +181,66 @@ class SchedulerEngine:
                     operator_bus_counts=dict(operator_bus_counts),
                     operator_total_wait=dict(operator_total_wait),
                     network_total_wait=network_total_wait,
-                    station_queue_length={sid: len(q) for sid, q in waiting_queues.items()},
+                    station_queue_length={
+                        sid: len(q)
+                        for sid, q in waiting_queues.items()
+                    },
                 )
 
             # ---- BusDeparture ----
             if isinstance(event, BusDepartureEvent):
-                first_station = state.plan[0]
                 bus_route = scenario.get_route(bus.route_id)
-                dist = bus_route.distance_between(state.last_position, first_station)
+                origin = bus_route.stops[0]
+
+                # Select plan lazily: strategy sees real network state now
+                candidates = self._plan_generator.generate_valid_plans(
+                    bus, bus_route, scenario
+                )
+                if not candidates:
+                    raise ValueError(
+                        f"No valid charging plan for bus '{bus.id}' "
+                        f"(route={bus.route_id}, "
+                        f"range={bus.battery_range_km} km)."
+                    )
+
+                sel_state = SchedulerState(
+                    current_time=event.timestamp,
+                    station_usage=dict(station_usage),
+                    waiting_queues={
+                        sid: list(q)
+                        for sid, q in waiting_queues.items()
+                    },
+                    charger_slots={
+                        sid: list(s)
+                        for sid, s in charger_slots.items()
+                    },
+                    bus_cumulative_wait=dict(bus_cumulative_wait),
+                    operator_total_wait=dict(operator_total_wait),
+                    operator_bus_counts=dict(operator_bus_counts),
+                    network_total_wait=network_total_wait,
+                )
+
+                plan = self._plan_selection_strategy.choose_plan(
+                    candidates, bus, scenario, sel_state
+                )
+                state.plan = plan
+
+                # Record this bus's commitment so later buses can see it
+                for sid in plan:
+                    station_usage[sid] += 1
+
+                timelines[bus_id].events.append(TimelineEvent(
+                    bus_id=bus_id,
+                    event_type="DEPARTED",
+                    station_id=origin,
+                    time_minutes=event.timestamp,
+                    notes=f"Full charge. Plan: {' → '.join(plan)}",
+                ))
+
+                first_station = plan[0]
+                dist = bus_route.distance_between(
+                    state.last_position, first_station
+                )
                 travel = self._travel_strategy.travel_minutes(bus, dist, {})
                 arr_t = event.timestamp + travel
 
@@ -199,41 +259,46 @@ class SchedulerEngine:
                 arrival_times[(bus_id, station_id)] = t
 
                 timelines[bus_id].events.append(TimelineEvent(
-                    bus_id=bus_id, event_type="ARRIVED",
-                    station_id=station_id, time_minutes=t,
+                    bus_id=bus_id,
+                    event_type="ARRIVED",
+                    station_id=station_id,
+                    time_minutes=t,
                     notes=f"Arrived at {station_id}",
                 ))
 
-                # Find earliest free charger slot
                 slots = charger_slots[station_id]
                 earliest_free = min(slots)
                 slot_idx = slots.index(earliest_free)
 
                 if earliest_free <= t:
-                    # Charger free — start immediately, no wait
                     self._start_charging(
                         bus, state, station_id, t, 0.0,
-                        slots, slot_idx, scenario, queue,
-                        timelines, bus_cumulative_wait,
-                        operator_total_wait,
+                        slots, slot_idx, scenario, queue, timelines,
                     )
-                    nonlocal_wait = 0.0
-                    network_total_wait += nonlocal_wait
                 else:
-                    # Must wait — add to queue
                     waiting_queues[station_id].append(bus_id)
                     timelines[bus_id].events.append(TimelineEvent(
-                        bus_id=bus_id, event_type="WAITING",
-                        station_id=station_id, time_minutes=t,
-                        notes=f"Waiting for charger (free ~{self._fmt(earliest_free)})",
+                        bus_id=bus_id,
+                        event_type="WAITING",
+                        station_id=station_id,
+                        time_minutes=t,
+                        notes=(
+                            "Waiting for charger "
+                            f"(free ~{self._fmt(earliest_free)})"
+                        ),
                     ))
 
             # ---- ChargingStarted ----
             elif isinstance(event, ChargingStartedEvent):
                 timelines[bus_id].events.append(TimelineEvent(
-                    bus_id=bus_id, event_type="CHARGING_STARTED",
-                    station_id=event.station_id, time_minutes=event.timestamp,
-                    notes=f"Charging started (waited {event.wait_minutes:.0f} min)",
+                    bus_id=bus_id,
+                    event_type="CHARGING_STARTED",
+                    station_id=event.station_id,
+                    time_minutes=event.timestamp,
+                    notes=(
+                        "Charging started "
+                        f"(waited {event.wait_minutes:.0f} min)"
+                    ),
                 ))
 
             # ---- ChargingCompleted ----
@@ -242,12 +307,13 @@ class SchedulerEngine:
                 t = event.timestamp
 
                 timelines[bus_id].events.append(TimelineEvent(
-                    bus_id=bus_id, event_type="CHARGING_COMPLETED",
-                    station_id=station_id, time_minutes=t,
+                    bus_id=bus_id,
+                    event_type="CHARGING_COMPLETED",
+                    station_id=station_id,
+                    time_minutes=t,
                     notes="Battery full.",
                 ))
 
-                # Log in station log
                 station_logs[station_id].charging_order.append(bus_id)
                 station_logs[station_id].entries.append({
                     "bus_id": bus_id,
@@ -263,9 +329,12 @@ class SchedulerEngine:
                 destination = bus_route.stops[-1]
 
                 if state.plan_index >= len(state.plan):
-                    # Head to destination
-                    dist = bus_route.distance_between(station_id, destination)
-                    travel = self._travel_strategy.travel_minutes(bus, dist, {})
+                    dist = bus_route.distance_between(
+                        station_id, destination
+                    )
+                    travel = self._travel_strategy.travel_minutes(
+                        bus, dist, {}
+                    )
                     arr_t = t + travel
                     queue.push(TripCompletedEvent(
                         timestamp=arr_t,
@@ -274,15 +343,23 @@ class SchedulerEngine:
                         total_wait_minutes=state.cumulative_wait,
                     ))
                     timelines[bus_id].events.append(TimelineEvent(
-                        bus_id=bus_id, event_type="EN_ROUTE_FINAL",
-                        station_id=None, time_minutes=t,
-                        notes=f"Heading to {destination} (arrives {self._fmt(arr_t)})",
+                        bus_id=bus_id,
+                        event_type="EN_ROUTE_FINAL",
+                        station_id=None,
+                        time_minutes=t,
+                        notes=(
+                            f"Heading to {destination} "
+                            f"(arrives {self._fmt(arr_t)})"
+                        ),
                     ))
                 else:
-                    # Head to next charging station
                     next_station = state.plan[state.plan_index]
-                    dist = bus_route.distance_between(station_id, next_station)
-                    travel = self._travel_strategy.travel_minutes(bus, dist, {})
+                    dist = bus_route.distance_between(
+                        station_id, next_station
+                    )
+                    travel = self._travel_strategy.travel_minutes(
+                        bus, dist, {}
+                    )
                     arr_t = t + travel
                     arrival_times[(bus_id, next_station)] = arr_t
                     queue.push(StationArrivalEvent(
@@ -292,7 +369,7 @@ class SchedulerEngine:
                         distance_from_last=dist,
                     ))
 
-                # Release charger and serve next waiting bus
+                # Release charger; serve the next waiting bus if any
                 if waiting_queues[station_id]:
                     ctx = make_context(t)
                     waiting_buses = [
@@ -307,11 +384,11 @@ class SchedulerEngine:
                         if bid != next_bus.id
                     ]
 
-                    # Compute wait time
-                    arr_t_next = arrival_times.get((next_bus.id, station_id), t)
+                    arr_t_next = arrival_times.get(
+                        (next_bus.id, station_id), t
+                    )
                     wait = max(0.0, t - arr_t_next)
 
-                    # Update wait tracking
                     bus_cumulative_wait[next_bus.id] = (
                         bus_cumulative_wait.get(next_bus.id, 0.0) + wait
                     )
@@ -319,31 +396,29 @@ class SchedulerEngine:
                     network_total_wait += wait
                     bus_states[next_bus.id].cumulative_wait += wait
 
-                    # Find a free slot (the one we just finished with)
                     slots = charger_slots[station_id]
                     min_slot_idx = slots.index(min(slots))
-
                     self._start_charging(
-                        next_bus, bus_states[next_bus.id], station_id, t, wait,
-                        slots, min_slot_idx, scenario, queue,
-                        timelines, bus_cumulative_wait,
-                        operator_total_wait,
+                        next_bus, bus_states[next_bus.id],
+                        station_id, t, wait,
+                        slots, min_slot_idx, scenario, queue, timelines,
                     )
-                    network_total_wait += 0  # wait already counted above
                 else:
-                    # Free the charger: reset the earliest slot to now
                     slots = charger_slots[station_id]
-                    min_idx = slots.index(min(slots))
-                    slots[min_idx] = t
+                    slots[slots.index(min(slots))] = t
 
             # ---- TripCompleted ----
             elif isinstance(event, TripCompletedEvent):
                 timelines[bus_id].final_arrival_minutes = event.timestamp
-                timelines[bus_id].total_wait_minutes = state.cumulative_wait
+                timelines[bus_id].total_wait_minutes = (
+                    state.cumulative_wait
+                )
                 timelines[bus_id].completed = True
                 timelines[bus_id].events.append(TimelineEvent(
-                    bus_id=bus_id, event_type="ARRIVED_DESTINATION",
-                    station_id=event.destination, time_minutes=event.timestamp,
+                    bus_id=bus_id,
+                    event_type="ARRIVED_DESTINATION",
+                    station_id=event.destination,
+                    time_minutes=event.timestamp,
                     notes=(
                         f"Arrived at {event.destination}. "
                         f"Total wait: {state.cumulative_wait:.0f} min"
@@ -373,18 +448,14 @@ class SchedulerEngine:
         scenario: Scenario,
         queue: EventQueue,
         timelines: dict[str, BusTimeline],
-        bus_cumulative_wait: dict[str, float],
-        operator_total_wait: dict[str, float],
     ) -> None:
-        """Assign a charger slot and push ChargingStarted + ChargingCompleted events."""
+        """Assign a charger slot; push ChargingStarted + ChargingCompleted."""
         station = scenario.get_station(station_id)
         duration = self._charging_strategy.duration_minutes(bus, station, {})
         charge_end = start_time + duration
 
-        # Reserve the slot
         slots[slot_idx] = charge_end
 
-        # Record charging stop
         stop = ChargingStop(
             station_id=station_id,
             planned_arrival_minutes=start_time - wait,
@@ -395,15 +466,11 @@ class SchedulerEngine:
         )
         timelines[bus.id].charging_stops.append(stop)
 
-        # Determine if this is the bus's last charging stop
         bus_route = scenario.get_route(bus.route_id)
-        next_plan_idx = state.plan_index + 1  # After this charge
+        next_plan_idx = state.plan_index + 1
         is_final = next_plan_idx >= len(state.plan)
-
         next_stop = (
-            bus_route.stops[-1]
-            if is_final
-            else state.plan[next_plan_idx]
+            bus_route.stops[-1] if is_final else state.plan[next_plan_idx]
         )
 
         queue.push(ChargingStartedEvent(

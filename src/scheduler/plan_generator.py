@@ -1,5 +1,5 @@
 """
-PlanGenerator — Enumerates all valid charging plans for a bus.
+PlanGenerator — Enumerates all feasible charging plans for a bus.
 
 A charging plan is an ordered list of intermediate stations where the bus will charge.
 A plan is VALID if it satisfies all registered Constraints.
@@ -11,9 +11,8 @@ For the Bengaluru→Kochi route (4 intermediate stations, 240 km range):
 - Valid 4-stop plans: (A,B,C,D)
 - Filtered by BatteryConstraint → typically only a subset pass
 
-The generator produces ALL valid plans for a bus, sorted by number of stops
-(fewer stops preferred — less charging overhead). The engine then picks the
-best plan based on scoring during conflict resolution.
+The generator is purely a feasibility filter — it does NOT choose which plan
+is best. Plan selection is the responsibility of PlanSelectionStrategy.
 
 Future: support partial replanning (bus already past station A →
         only consider remaining stations) via `from_stop` parameter.
@@ -30,10 +29,13 @@ if TYPE_CHECKING:
 
 class PlanGenerator:
     """
-    Generates all valid charging plans for a bus given active constraints.
-    
+    Enumerates all feasible charging plans for a bus given active constraints.
+
     Constraints are injected (not hardcoded), making it trivial to add
-    new hard constraints without touching this class.
+    new hard constraints without modifying this class.
+
+    This class is a pure feasibility filter. Plan selection — deciding which
+    feasible plan to actually execute — belongs in PlanSelectionStrategy.
     """
 
     def __init__(self, constraints: list[Constraint]) -> None:
@@ -91,25 +93,3 @@ class PlanGenerator:
             for c in self._constraints
         )
 
-    def best_plan(
-        self,
-        bus: "Bus",
-        route: "Route",
-        scenario: "Scenario",
-    ) -> list[str]:
-        """
-        Return the single best valid plan for this bus.
-        
-        'Best' = fewest charging stops (lowest overhead).
-        Ties are broken by earliest stations (prefer charging earlier in trip).
-        
-        Raises ValueError if no valid plan exists.
-        """
-        plans = self.generate_valid_plans(bus, route, scenario)
-        if not plans:
-            raise ValueError(
-                f"No valid charging plan found for bus '{bus.id}' "
-                f"(route={bus.route_id}, range={bus.battery_range_km} km). "
-                f"Check route distances and battery range."
-            )
-        return plans[0]
