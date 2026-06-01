@@ -17,12 +17,39 @@
 
 ### Real-World Challenges & Future Possibilities
 1. **Variable Bus Speeds**: Buses may not have fixed travel speeds.
-2. **Distinct Directional Paths**: The routes from A → B and B → A are different and should not be treated as a single path.
+2. **Distinct Directional Paths**: The routes from A → B and B → A can be different and should not be treated as a single bi directional path.
 3. **Shared Stations across Multiple Routes**: Stations like C can be part of different overlapping paths and serve different destinations in the future.
 4. **Dynamic Charging Duration**: Charging times can be dynamic rather than fixed.
 5. **Active Running States**: Some vehicles may already be running when planning starts, making their initial active state important.
 6. **Varying Charging Capacities**: All buses may not have a fixed charging or battery capacity.
 7. **Varying Station Charging Slots**: Different stations may have different numbers of charging slots available.
+
+## Algorithm
+```
+Algo 1 ❌
+1. Find all possible routes for each bus and filter valid one's which are following constratints.
+2. Select route with less stops. (DUMB)
+3. Then consider this route bus moves.
+4. Push Events to Priority Queue based on Time.
+5. When collison happens at station order buses with good score (less penality)
+
+At station we are ordering properly but we deciding path in upfront without current load.
+
+Hmmm.. need to balance both path selection and bus order at station
+
+Algo 2  ✅
+
+1. Find Valid Paths:- We generate all possible charging plans/routes for each bus and filter out only the valid ones that satisfy constraints (like battery capacity and route boundaries).
+
+2. Postpone Plan Selection (Lazy Booking):- Instead of choosing routes immediately, we schedule initial departure events for all buses.
+
+3. Decide Route at Departure:- When a bus is about to leave, it dynamically selects the best route plan based on the real-time load/commitments at each charging station.
+
+4. Run Timeline Simulation:- We push all movement and charging events to a time-sorted priority queue to simulate the entire scenario step-by-step.
+
+5. Resolve Charging Conflicts:- When multiple buses compete for a charger, we rank them using scoring rules (like wait times and operator fairness) and serve the bus with the lowest penalty first.
+```
+
 
 ## System Architecture
 
