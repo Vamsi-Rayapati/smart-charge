@@ -1,4 +1,14 @@
 # pyrefly: ignore [missing-import]
+import sys
+import os
+
+# Ensure the repository root (parent of `src/`) is on sys.path so that
+# `from src.xxx` imports resolve correctly on Streamlit Cloud, Docker, and
+# any other environment where PYTHONPATH is not pre-configured.
+_repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _repo_root not in sys.path:
+    sys.path.insert(0, _repo_root)
+
 import streamlit as st
 
 from src.services.scenario_loader import ScenarioLoader
