@@ -15,6 +15,12 @@ Given a fleet of buses, a set of charging stations, and a route, SmartCharge:
 
 ---
 
+## Architecture & Algorithms
+
+For a detailed explanation of the system design, scheduling algorithms, and event-driven simulation loop, please refer to [ARCHITECTURE.md](ARCHITECTURE.md).
+
+---
+
 ## Quick start
 
 ### Local (Python 3.11+)
@@ -40,25 +46,12 @@ Open [http://localhost:8501](http://localhost:8501) in your browser.
 
 ```
 src/
-├── app.py                          # Streamlit entry point
-├── domain/
-│   ├── models.py                   # Pydantic data models
-│   └── enums.py                    # EventType, BusStatus
-├── scheduler/
-│   ├── engine.py                   # Event-driven simulation engine
-│   ├── plan_generator.py           # Feasibility filter (generates candidate plans)
-│   ├── events/                     # Event dataclasses + min-heap queue
-│   ├── constraints/                # Hard constraints (battery, route, charger)
-│   ├── strategies/
-│   │   ├── plan_selection_strategy.py  # Plan routing strategies (NEW)
-│   │   ├── scoring_strategy.py         # Charger contention resolver
-│   │   ├── charging_strategy.py        # Charging duration model
-│   │   └── travel_time_strategy.py     # Travel time model
-│   └── rules/                      # Soft scoring rules (wait fairness, operator, network)
-├── services/
-│   └── scenario_loader.py          # JSON scenario loader
-├── ui/                             # Streamlit UI components
-└── scenarios/                      # Five test scenarios (JSON)
+├── app.py              # Streamlit application entry point
+├── domain/             # Core domain models and enums
+├── scheduler/          # Simulation engine, strategies, constraints, and scoring rules
+├── scenarios/          # JSON scenario files for testing simulation behavior
+├── services/           # Scenario loader service
+└── ui/                 # Streamlit UI components (header, tabs, sidebar)
 ```
 
 ---
